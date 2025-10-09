@@ -1,4 +1,5 @@
 // models/Timeslot.ts
+import "dotenv/config";
 import mongoose, { Schema, models } from "mongoose";
 
 const TimeslotSchema = new Schema({
