@@ -1,65 +1,61 @@
 // src/app/api/bookings/initiate/route.ts
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { connectDB } from "@/lib/db";
-import { Payment } from "@/models/Payment";
-import { initializeTransaction } from "@/lib/paystack"; // helper included below
-
-const BodySchema = z.object({
-  slotId: z.string(),
-  name: z.string().min(1),
-  email: z.string().email(),
-  phone: z.string().min(6),
-  notes: z.string().optional(),
-  amountNGN: z.number().positive(),
-  purpose: z.string().optional(),
-});
+import axios from "axios";
+import { connectToDB } from "@/lib/db";
+import Payment from "@/lib/models/Payment"; // ✅ ensure the file exists
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const parsed = BodySchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  }
-
-  await connectDB();
-
-  const { slotId, name, email, phone, notes, amountNGN, purpose } = parsed.data;
-  const amountKobo = Math.round(amountNGN * 100);
-
-  // create unique reference
-  const reference = `swim_${purpose || "BOOKING"}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-  // store a payment row in DB (INITIATED) with metadata including slot & client info
-  await Payment.create({
-    userId: null,
-    amountKobo,
-    currency: "NGN",
-    provider: "PAYSTACK",
-    reference,
-    status: "INITIATED",
-    meta: {
-      slotId,
-      client: { name, email, phone, notes },
-      purpose: purpose || "CLASS_PACK",
-    },
-  });
-
   try {
-    const res = await initializeTransaction(amountKobo, email, {
+    const { email, name } = await req.json();
+    if (!email || !name) {
+      return NextResponse.json({ error: "Missing details" }, { status: 400 });
+    }
+
+    await connectToDB();
+
+    const amount = 150000 * 100; // Paystack uses kobo
+    const reference = `swim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // ✅ Initialize Paystack transaction
+    const payload = {
+      email,
+      amount,
       reference,
-      slotId,
+      callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/booking?reference=${reference}`,
+      metadata: { name, purpose: "CLASS_PACK" },
+    };
+
+    const res = await axios.post(
+      "https://api.paystack.co/transaction/initialize",
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // ✅ Save payment info in DB (pending)
+    await Payment.create({
       name,
-      phone,
-      notes,
-      purpose,
+      email,
+      amount: amount / 100,
+      reference,
+      status: "PENDING",
     });
 
-    // Paystack initialization returns authorization_url
-    // return the response to the client
-    return NextResponse.json(res.data || res);
+    // ✅ Return Paystack URL
+    return NextResponse.json({
+      success: true,
+      authorization_url: res.data.data.authorization_url,
+      reference,
+    });
   } catch (err: any) {
-    console.error("Paystack init error", err?.response?.data || err.message || err);
-    return NextResponse.json({ error: "Could not initialize payment" }, { status: 500 });
+    console.error("Paystack init error:", err?.response?.data || err.message);
+    return NextResponse.json(
+      { error: "Payment initialization failed" },
+      { status: 500 }
+    );
   }
 }
