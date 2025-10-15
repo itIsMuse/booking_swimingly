@@ -1,71 +1,64 @@
 import { NextResponse } from "next/server";
-import axios from "axios";
-import { connectToDB } from "@/lib/db";
-import Payment from "@/lib/models/Payment";
 import Booking from "@/lib/models/Booking";
+import {connectToDB} from "@/lib/db";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const reference = searchParams.get("reference");
 
   if (!reference) {
-    return NextResponse.json({ error: "Missing reference parameter" }, { status: 400 });
+    return NextResponse.json({ error: "Missing reference" }, { status: 400 });
   }
-
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret) {
-    console.error("Missing PAYSTACK_SECRET_KEY");
-    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
-  }
-
-  await connectToDB();
 
   try {
-    // Verify transaction on Paystack
-    const response = await axios.get(`https://api.paystack.co/transaction/verify/${reference}`, {
-      headers: { Authorization: `Bearer ${secret}` },
-    });
+    // Connect to MongoDB
+    await connectToDB();
 
-    const data = response.data?.data;
-    if (!data) {
-      return NextResponse.json({ error: "Could not verify payment" }, { status: 500 });
-    }
+    // Verify with Paystack
+    const verifyRes = await fetch(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
+      }
+    );
 
-    // Find payment in DB
-    const payment = await Payment.findOne({ reference });
-    if (!payment) {
-      return NextResponse.json({ error: "Payment not found in DB" }, { status: 404 });
-    }
+    const data = await verifyRes.json();
 
-    if (data.status === "success") {
-      payment.status = "PAID";
-      await payment.save();
+    if (data.data.status === "success") {
+      // Extract email or custom metadata to find booking
+      const customerEmail = data.data.customer.email;
 
-      // Update booking if bookingId exists in metadata
-      const bookingId = payment.meta?.bookingId;
-      let booking = null;
-      if (bookingId) {
-        booking = await Booking.findByIdAndUpdate(
-          bookingId,
-          { paymentStatus: "paid" },
-          { new: true }
+      // Update paymentStatus to 'paid' in your Booking model
+      const booking = await Booking.findOneAndUpdate(
+        { email: customerEmail, paymentStatus: "pending" },
+        { paymentStatus: "paid" },
+        { new: true }
+      );
+
+      if (!booking) {
+        return NextResponse.json(
+          { message: "Booking not found or already paid" },
+          { status: 404 }
         );
       }
 
       return NextResponse.json({
-        success: true,
         message: "Payment verified successfully",
         booking,
       });
     } else {
-      return NextResponse.json({
-        success: false,
-        message: "Payment not completed",
-        status: data.status,
-      });
+      return NextResponse.json(
+        { message: "Payment verification failed", data },
+        { status: 400 }
+      );
     }
-  } catch (err: any) {
-    console.error("Paystack verify error", err.response?.data || err.message);
-    return NextResponse.json({ error: "Verification failed" }, { status: 500 });
+  } catch (error: any) {
+    console.error(error);
+    return NextResponse.json(
+      { error: "An error occurred", details: error.message },
+      { status: 500 }
+    );
   }
 }

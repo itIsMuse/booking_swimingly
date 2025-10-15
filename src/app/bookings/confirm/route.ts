@@ -1,6 +1,7 @@
 // src/app/api/bookings/confirm/route.ts
 import { NextResponse } from "next/server";
 import { connectToDB } from "@/lib/db";
+import { sendEmail } from "@/lib/sendEmail";
 import Timeslot from "@/lib/models/Timeslot";
 
 export async function POST(req: Request) {
