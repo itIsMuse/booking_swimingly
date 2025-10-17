@@ -1,61 +1,99 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import axios from "axios";
+import { useSearchParams, useRouter } from "next/navigation";
 
 export default function BookingPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const reference = searchParams.get("reference");
-  const [verified, setVerified] = useState(false);
+  const router = useRouter();
+
+  const [isVerified, setIsVerified] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [slots, setSlots] = useState([]);
+
+  const reference = searchParams.get("reference");
+  const email = searchParams.get("email");
 
   useEffect(() => {
-    // 🔒 If no payment reference, redirect to pay page
-    if (!reference) {
-      router.replace("/pay");
-      return;
-    }
+    async function verifyPayment() {
+      if (!reference) {
+        setError("No payment reference found. Please complete payment first.");
+        setLoading(false);
+        return;
+      }
 
-    // 🔍 Verify payment
-    const verifyPayment = async () => {
       try {
-        const res = await axios.get(`/api/payments/verify?reference=${reference}`);
-        if (res.data.status === "PAID") {
-          setVerified(true);
+        const res = await fetch(`/api/payments/verify?reference=${reference}`);
+        const data = await res.json();
+
+        if (res.ok && data.status === "success") {
+          setIsVerified(true);
+          await fetchSlots(); // fetch available timeslots
         } else {
-          alert("Payment not verified. Please contact support.");
-          router.replace("/pay");
+          setError(data.message || "Payment not verified.");
         }
       } catch (err) {
-        console.error("Verification failed", err);
-        router.replace("/pay");
+        console.error(err);
+        setError("Server error verifying payment.");
       } finally {
         setLoading(false);
       }
-    };
+    }
+
+    async function fetchSlots() {
+      const res = await fetch("/api/timeslots");
+      const data = await res.json();
+      setSlots(data.slots || []);
+    }
 
     verifyPayment();
-  }, [reference, router]);
+  }, [reference]);
 
-  if (loading) {
+  if (loading) return <p className="p-6 text-center">Verifying payment...</p>;
+
+  if (error)
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Verifying your payment, please wait...</p>
+      <div className="p-6 text-center text-red-500">
+        <p>{error}</p>
+        <button
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
+          onClick={() => router.push("/")}
+        >
+          Go back
+        </button>
       </div>
     );
-  }
 
-  if (!verified) return null;
+  if (!isVerified)
+    return (
+      <div className="p-6 text-center">
+        <p>Please complete your payment to access bookings.</p>
+      </div>
+    );
 
-  // ✅ Only show available slots when verified
   return (
-    <div className="min-h-screen p-8">
-      <h1 className="text-2xl font-bold mb-4">Select a Timeslot</h1>
-      {/* Slot selection UI goes here */}
-      <p className="text-gray-700 mb-2">✅ Payment verified. You can now select a class slot.</p>
-      {/* Later: Load slots from your backend */}
+    <div className="p-6 max-w-xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4 text-center">Available Slots</h1>
+
+      {slots.length === 0 ? (
+        <p>No slots available right now.</p>
+      ) : (
+        <ul className="space-y-3">
+          {slots.map((slot: any) => (
+            <li
+              key={slot._id}
+              className={`p-3 border rounded-lg ${
+                slot.isBooked ? "bg-gray-200" : "hover:bg-blue-100 cursor-pointer"
+              }`}
+            >
+              <p>
+                {slot.date} — {slot.time}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

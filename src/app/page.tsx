@@ -13,17 +13,24 @@ export default function PaymentPage() {
     setError(null);
     if (!form.name || !form.email || !form.phone) return setError("All fields required");
     setSubmitting(true);
+
     try {
-      const res = await axios.post("/api/bookings/initiate", {
+      const res = await axios.post("/bookings/initiate", {
         name: form.name,
         email: form.email,
         phone: form.phone,
         amountNGN: price,
         purpose: "CLASS_PACK",
       });
+
       const authUrl =
         res.data?.authorization_url || res.data?.data?.authorization_url;
-      if (authUrl) window.location.href = authUrl;
+
+      if (authUrl) {
+        window.location.href = authUrl; // Redirect user to Paystack payment page
+      } else {
+        setError("Could not get payment link from Paystack.");
+      }
     } catch (err: any) {
       console.error(err);
       setError("Payment initialization failed.");
@@ -43,6 +50,7 @@ export default function PaymentPage() {
           Payment required:{" "}
           <strong className="text-[#FFD43B]">₦{price.toLocaleString()}</strong>
         </p>
+
         <input
           name="name"
           placeholder="Full name"
@@ -65,7 +73,9 @@ export default function PaymentPage() {
           onChange={(e) => setForm({ ...form, phone: e.target.value })}
           required
         />
+
         {error && <p className="text-red-400 mb-3 text-sm">{error}</p>}
+
         <button
           type="submit"
           disabled={submitting}
