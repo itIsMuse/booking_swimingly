@@ -15,7 +15,7 @@ export default function PaymentPage() {
     setSubmitting(true);
 
     try {
-      const res = await axios.post("/bookings/initiate", {
+      const res = await axios.post("./bookings/initiate", {
         name: form.name,
         email: form.email,
         phone: form.phone,
