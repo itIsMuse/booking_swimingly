@@ -1,99 +1,74 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import axios from "axios";
 
 export default function BookingPage() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-
-  const [isVerified, setIsVerified] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [slots, setSlots] = useState([]);
-
-  const reference = searchParams.get("reference");
-  const email = searchParams.get("email");
+  const [status, setStatus] = useState<"loading" | "success" | "failed" | "idle">("idle");
+  const [data, setData] = useState<any>(null);
 
   useEffect(() => {
-    async function verifyPayment() {
-      if (!reference) {
-        setError("No payment reference found. Please complete payment first.");
-        setLoading(false);
-        return;
-      }
+    const verifyPayment = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const reference = params.get("reference");
+      if (!reference) return;
+
+      setStatus("loading");
 
       try {
-        const res = await fetch(`/api/payments/verify?reference=${reference}`);
-        const data = await res.json();
-
-        if (res.ok && data.status === "success") {
-          setIsVerified(true);
-          await fetchSlots(); // fetch available timeslots
+        const res = await axios.get(`/api/bookings/verify?reference=${reference}`);
+        if (res.data.verified) {
+          setStatus("success");
+          setData(res.data.data);
         } else {
-          setError(data.message || "Payment not verified.");
+          setStatus("failed");
+          setData(res.data.data);
         }
       } catch (err) {
         console.error(err);
-        setError("Server error verifying payment.");
-      } finally {
-        setLoading(false);
+        setStatus("failed");
       }
-    }
-
-    async function fetchSlots() {
-      const res = await fetch("/api/timeslots");
-      const data = await res.json();
-      setSlots(data.slots || []);
-    }
+    };
 
     verifyPayment();
-  }, [reference]);
+  }, []);
 
-  if (loading) return <p className="p-6 text-center">Verifying payment...</p>;
-
-  if (error)
+  if (status === "loading") {
     return (
-      <div className="p-6 text-center text-red-500">
-        <p>{error}</p>
-        <button
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
-          onClick={() => router.push("/")}
-        >
-          Go back
-        </button>
+      <div className="flex flex-col items-center justify-center h-screen">
+        <h2 className="text-xl font-semibold">Verifying your payment...</h2>
       </div>
     );
+  }
 
-  if (!isVerified)
+  if (status === "success") {
     return (
-      <div className="p-6 text-center">
-        <p>Please complete your payment to access bookings.</p>
+      <div className="flex flex-col items-center justify-center h-screen text-center">
+        <h2 className="text-2xl font-bold text-green-600">Payment Successful 🎉</h2>
+        <p className="mt-2 text-gray-700">
+          Thank you {data?.customer?.first_name || "Customer"}! <br />
+          Your transaction was successful.
+        </p>
+
+        <div className="mt-4 bg-gray-100 rounded-lg p-4 shadow w-[320px]">
+          <p><strong>Reference:</strong> {data?.reference}</p>
+          <p><strong>Amount:</strong> ₦{Number(data?.amount / 100).toLocaleString()}</p>
+          <p><strong>Date:</strong> {new Date(data?.paid_at).toLocaleString()}</p>
+        </div>
       </div>
     );
+  }
 
-  return (
-    <div className="p-6 max-w-xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4 text-center">Available Slots</h1>
+  if (status === "failed") {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen text-center">
+        <h2 className="text-2xl font-bold text-red-600">Payment Failed ❌</h2>
+        <p className="mt-2 text-gray-700">
+          Sorry, we couldn’t verify your transaction.
+        </p>
+      </div>
+    );
+  }
 
-      {slots.length === 0 ? (
-        <p>No slots available right now.</p>
-      ) : (
-        <ul className="space-y-3">
-          {slots.map((slot: any) => (
-            <li
-              key={slot._id}
-              className={`p-3 border rounded-lg ${
-                slot.isBooked ? "bg-gray-200" : "hover:bg-blue-100 cursor-pointer"
-              }`}
-            >
-              <p>
-                {slot.date} — {slot.time}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
+  return null;
 }
