@@ -5,27 +5,27 @@ import Payment from "@/lib/models/Payment";
 
 export async function POST(req: Request) {
   try {
-    const { email, name } = await req.json();
+    const { email, name, phone } = await req.json(); 
 
-    if (!email || !name) {
+    if (!email || !name || !phone) {
       return NextResponse.json(
-        { success: false, error: "Missing name or email" },
+        { success: false, error: "Missing name, email, or phone" },
         { status: 400 }
       );
     }
 
-    // ✅ Connect to MongoDB
+    
     await connectToDB();
 
-    // ✅ Amount (₦150,000) in Kobo
+  
     const amount = 150000 * 100;
 
-    // ✅ Unique Paystack reference
+  
     const reference = `swim_${Date.now()}_${Math.random()
       .toString(36)
       .slice(2, 8)}`;
 
-    // ✅ Payload for Paystack
+  
     const payload = {
       email,
       amount,
@@ -33,11 +33,12 @@ export async function POST(req: Request) {
       callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/booking?reference=${reference}`,
       metadata: {
         name,
+        phone,
         purpose: "CLASS_PACK",
       },
     };
 
-    // ✅ Send to Paystack
+  
     const response = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       payload,
@@ -55,7 +56,8 @@ export async function POST(req: Request) {
     await Payment.create({
       name,
       email,
-      amount: amount / 100, // store in Naira
+      phone, // ✅ include phone so schema doesn’t throw error
+      amount: amount / 100,
       reference,
       status: "PENDING",
     });

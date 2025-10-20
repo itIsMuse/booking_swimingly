@@ -6,25 +6,23 @@ const PaymentSchema = new Schema(
     email: { type: String, required: true },
     phone: { type: String, required: true },
 
-    // amount in kobo (Paystack uses kobo)
+    // amount in naira (we divide before saving)
     amount: { type: Number, required: true },
 
-    reference: { type: String, required: true, unique: true }, // Paystack reference
+    reference: { type: String, required: true, unique: true },
+
     status: {
       type: String,
-      enum: ["pending", "success", "failed"],
-      default: "pending",
+      enum: ["PENDING", "SUCCESS", "FAILED"],
+      default: "PENDING", // ✅ fixed case
     },
 
-    // optional link to booking once confirmed
     bookingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Booking",
     },
 
-    // Paystack transaction data (raw)
     gatewayResponse: { type: Object },
-
   },
   { timestamps: true }
 );
