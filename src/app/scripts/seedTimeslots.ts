@@ -1,40 +1,60 @@
-// src/app/scripts/seedTimeslots.ts
 import path from "path";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import Timeslot from "../../lib/models/Timeslot";
 import { connectToDB } from "../../lib/db";
+import { addDays, format } from "date-fns";
 
 // ✅ Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 
+// CONFIG
+const START_HOUR = 9;
+const END_HOUR = 18; // up to 6pm
+const DAYS_AHEAD = 30; // seed 4 weeks
+
+const LOCATIONS = [
+  "Novatel",
+  "Godaif Village",
+  "Lekki Grand View",
+];
+
 async function seed() {
   await connectToDB();
 
-  // ✅ Correct structure that matches your Timeslot schema
-  const sampleSlots = [
-    {
-      date: new Date("2025-10-09"),
-      time: "09:00 - 10:00",
-      location: "Novatel",
-    },
-    {
-      date: new Date("2025-10-10"),
-      time: "11:00 - 12:00",
-      location: "Godaif Village",
-    },
-    {
-      date: new Date("2025-10-12"),
-      time: "15:00 - 16:00",
-      location: "Lekki Grand View",
-    },
-  ];
+  let createdCount = 0;
 
-  // ✅ Clear old slots (optional)
-  await Timeslot.deleteMany({});
-  await Timeslot.insertMany(sampleSlots);
+  for (let dayOffset = 0; dayOffset < DAYS_AHEAD; dayOffset++) {
+    const dateObj = addDays(new Date(), dayOffset);
+    const dateStr = format(dateObj, "yyyy-MM-dd");
 
-  console.log("✅ Seeded test timeslots successfully!");
+    for (const location of LOCATIONS) {
+      for (let hour = START_HOUR; hour < END_HOUR; hour++) {
+        const startTime = `${hour.toString().padStart(2, "0")}:00`;
+        const endTime = `${(hour + 1).toString().padStart(2, "0")}:00`;
+        const time = `${startTime} - ${endTime}`;
+
+        // ✅ Check if slot already exists
+        const exists = await Timeslot.findOne({
+          date: new Date(dateStr),
+          time,
+          location,
+        });
+
+        if (!exists) {
+          await Timeslot.create({
+            date: new Date(dateStr),
+            time,
+            location,
+            isBooked: false,
+          });
+          createdCount++;
+        }
+      }
+    }
+  }
+
+  console.log(`✅ Seed complete. ${createdCount} new slots created.`);
   mongoose.connection.close();
 }
 
