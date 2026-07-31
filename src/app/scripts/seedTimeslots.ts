@@ -3,62 +3,55 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import Timeslot from "../../lib/models/Timeslot";
 import { connectToDB } from "../../lib/db";
-import { addDays, format } from "date-fns";
 
-// ✅ Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 
-// CONFIG
-const START_HOUR = 9;
-const END_HOUR = 18; // up to 6pm
-const DAYS_AHEAD = 30; // seed 4 weeks
-
-const LOCATIONS = [
-  "Novatel",
-  "Godaif Village",
-  "Lekki Grand View",
-];
+const LOCATIONS = ["Novatel", "Godaif Village", "Lekki Grand View"] as const;
 
 async function seed() {
   await connectToDB();
 
-  let createdCount = 0;
+  const startHour = 9;
+  const endHour = 18;
 
-  for (let dayOffset = 0; dayOffset < DAYS_AHEAD; dayOffset++) {
-    const dateObj = addDays(new Date(), dayOffset);
-    const dateStr = format(dateObj, "yyyy-MM-dd");
+  const today = new Date();
+  const daysToSeed = 14; // 2 weeks
 
-    for (const location of LOCATIONS) {
-      for (let hour = START_HOUR; hour < END_HOUR; hour++) {
-        const startTime = `${hour.toString().padStart(2, "0")}:00`;
-        const endTime = `${(hour + 1).toString().padStart(2, "0")}:00`;
-        const time = `${startTime} - ${endTime}`;
+  let created = 0;
 
-        // ✅ Check if slot already exists
+  for (let d = 0; d < daysToSeed; d++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + d);
+    date.setHours(0, 0, 0, 0);
+
+    for (let hour = startHour; hour < endHour; hour++) {
+      const time = `${hour}:00 - ${hour + 1}:00`;
+
+      for (const location of LOCATIONS) {
         const exists = await Timeslot.findOne({
-          date: new Date(dateStr),
+          date,
           time,
           location,
         });
 
         if (!exists) {
           await Timeslot.create({
-            date: new Date(dateStr),
+            date,
             time,
             location,
             isBooked: false,
           });
-          createdCount++;
+          created++;
         }
       }
     }
   }
 
-  console.log(`✅ Seed complete. ${createdCount} new slots created.`);
-  mongoose.connection.close();
+  console.log(`✅ Seed complete. ${created} slots created.`);
+  await mongoose.connection.close();
 }
 
 seed().catch((err) => {
-  console.error("❌ Error seeding timeslots:", err);
+  console.error(err);
   mongoose.connection.close();
 });

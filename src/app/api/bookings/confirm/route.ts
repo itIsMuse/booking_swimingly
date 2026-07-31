@@ -4,74 +4,92 @@ import { connectToDB } from "@/lib/db";
 import Booking from "@/lib/models/Booking";
 import Timeslot from "@/lib/models/Timeslot";
 import Payment from "@/lib/models/Payment";
-import { sendEmail } from "@/lib/sendEmail"; // 📩 import email utility
+import { sendEmail } from "@/lib/sendEmail";
+import { format } from "date-fns";
 
 export async function POST(req: Request) {
   try {
     const { reference, timeslotId, name, email } = await req.json();
 
     if (!reference || !timeslotId || !name || !email) {
-      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
     await connectToDB();
 
-    // ✅ Confirm payment exists and is PAID
-    const payment = await Payment.findOne({ reference, status: "PAID" });
+    /* ---------------------------------
+       1️⃣ VERIFY PAYMENT
+    ---------------------------------- */
+    const payment = await Payment.findOne({
+      reference,
+      status: "PAID",
+    });
+
     if (!payment) {
       return NextResponse.json(
-        { error: "Payment not verified or not found" },
+        { error: "Payment not verified" },
         { status: 403 }
       );
     }
 
-    // ✅ Check if timeslot exists and is available
-    const slot = await Timeslot.findById(timeslotId);
+    /* ---------------------------------
+       2️⃣ ATOMIC SLOT BOOKING
+       (prevents double booking)
+    ---------------------------------- */
+    const slot = await Timeslot.findOneAndUpdate(
+      { _id: timeslotId, isBooked: false },
+      { isBooked: true },
+      { new: true }
+    );
+
     if (!slot) {
-      return NextResponse.json({ error: "Timeslot not found" }, { status: 404 });
-    }
-    if (slot.isBooked) {
-      return NextResponse.json({ error: "Timeslot already booked" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Timeslot already booked or not found" },
+        { status: 400 }
+      );
     }
 
-    // ✅ Mark slot as booked
-    slot.isBooked = true;
-    await slot.save();
-
-    // ✅ Create booking record
+    /* ---------------------------------
+       3️⃣ CREATE BOOKING RECORD
+    ---------------------------------- */
     const booking = await Booking.create({
       name,
       email,
-      timeslot: timeslotId,
+      timeslot: slot._id,
       paymentReference: reference,
       paymentStatus: "PAID",
       status: "CONFIRMED",
     });
 
-    // ✅ Send branded confirmation email
+    /* ---------------------------------
+       4️⃣ EMAIL CONFIRMATION
+    ---------------------------------- */
+    const formattedDate = format(new Date(slot.date), "EEEE, MMM d yyyy");
+
     const htmlTemplate = `
       <div style="font-family: Arial, sans-serif; background-color: #f7faff; padding: 24px;">
-        <div style="max-width: 600px; margin: auto; background: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        <div style="max-width: 600px; margin: auto; background: #ffffff; border-radius: 10px;">
           <div style="background: #0077b6; padding: 20px; text-align: center;">
             <h1 style="color: white; margin: 0;">Swimingly Swim School 💦</h1>
           </div>
           <div style="padding: 20px; color: #333;">
-            <h2 style="color: #0077b6;">Hi ${name},</h2>
-            <p>We’re excited to let you know that your swimming class has been successfully <strong>booked and confirmed!</strong></p>
-            
-            <h3 style="color: #0077b6;">Booking Details:</h3>
-            <ul style="list-style: none; padding: 0;">
-              <li><strong>Package:</strong> Beginner 10-Class Pack</li>
-              <li><strong>Date:</strong> ${slot.date}</li>
+            <h2>Hi ${name},</h2>
+            <p>Your swimming session has been <strong>successfully booked!</strong></p>
+
+            <h3>Booking Details</h3>
+            <ul>
+              <li><strong>Date:</strong> ${formattedDate}</li>
               <li><strong>Time:</strong> ${slot.time}</li>
-              <li><strong>Payment Reference:</strong> ${reference}</li>
+              <li><strong>Location:</strong> ${slot.location}</li>
+              <li><strong>Payment Ref:</strong> ${reference}</li>
             </ul>
 
-            <p>Thank you for trusting <strong>Swimingly Swim School</strong>. Your journey to becoming a confident swimmer starts now! 🏊‍♂️</p>
-            <p>We’ll see you soon at the pool!</p>
-            
-            <br />
-            <p>— The Swimingly Team 💙</p>
+            <p>We’re excited to have you. See you at the pool! 🏊‍♂️</p>
+
+            <p>— Swimingly Team 💙</p>
           </div>
         </div>
       </div>
@@ -79,27 +97,37 @@ export async function POST(req: Request) {
 
     await sendEmail(
       email,
-      "✅ Your Swimingly Class Booking is Confirmed!",
+      "✅ Your Swimingly Booking is Confirmed",
       htmlTemplate
     );
 
-    // (Optional) Notify admin
+    /* ---------------------------------
+       5️⃣ ADMIN NOTIFICATION
+    ---------------------------------- */
     await sendEmail(
-      "swiminglyschool@gmail.com", // replace with your admin email
-      "📥 New Booking Received",
-      `<p>${name} just booked a swimming class on <b>${slot.date}</b> at <b>${slot.time}</b>.</p>
-       <p>Payment Reference: ${reference}</p>`
+      "swiminglyschool@gmail.com",
+      "📥 New Booking Confirmed",
+      `
+        <p><strong>${name}</strong> booked a class.</p>
+        <p>Date: ${formattedDate}</p>
+        <p>Time: ${slot.time}</p>
+        <p>Location: ${slot.location}</p>
+        <p>Reference: ${reference}</p>
+      `
     );
 
-    // ✅ Response
+    /* ---------------------------------
+       6️⃣ RESPONSE (IMPORTANT)
+    ---------------------------------- */
     return NextResponse.json({
-      message: "✅ Booking confirmed & email sent successfully!",
+      message: "Booking confirmed successfully",
       booking,
+      slot,
     });
-  } catch (err: any) {
-    console.error("Booking confirmation failed:", err);
+  } catch (error) {
+    console.error("Booking confirmation error:", error);
     return NextResponse.json(
-      { error: "Server error during booking confirmation" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
