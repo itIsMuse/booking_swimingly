@@ -30,7 +30,7 @@ export async function POST(req: Request) {
       email,
       amount,
       reference,
-      callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/booking?reference=${reference}`,
+      callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/verify`,
       metadata: {
         name,
         phone,

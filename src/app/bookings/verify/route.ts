@@ -1,70 +1,103 @@
-// src/app/api/bookings/verify/route.ts
 import { NextResponse } from "next/server";
-import axios from "axios";
+import Booking from "@/lib/models/Booking";
+import Student from "@/lib/models/Student";
 import { connectToDB } from "@/lib/db";
-import Payment from "@/lib/models/Payment";
 
 export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const reference = searchParams.get("reference");
+  const { searchParams } = new URL(req.url);
+  const reference = searchParams.get("reference");
 
-    if (!reference) {
+  if (!reference) {
+    return NextResponse.json(
+      { error: "Missing reference" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    await connectToDB();
+
+    // Verify payment with Paystack
+    const verifyRes = await fetch(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
+      }
+    );
+
+    const result = await verifyRes.json();
+
+    if (result.data.status !== "success") {
       return NextResponse.json(
-        { success: false, error: "Missing transaction reference" },
+        {
+          success: false,
+          message: "Payment verification failed",
+        },
         { status: 400 }
       );
     }
 
-    await connectToDB();
+    const customerEmail = result.data.customer.email;
 
-    // Fetch payment record
-    const payment = await Payment.findOne({ reference });
-    if (!payment) {
+    // Update booking
+    const booking = await Booking.findOneAndUpdate(
+      {
+        email: customerEmail,
+        paymentStatus: "pending",
+      },
+      {
+        paymentStatus: "paid",
+      },
+      {
+        new: true,
+      }
+    );
+
+    if (!booking) {
       return NextResponse.json(
-        { success: false, error: "Payment record not found" },
+        {
+          success: false,
+          message: "Booking not found or already paid",
+        },
         { status: 404 }
       );
     }
 
-    // ✅ Verify transaction from Paystack
-    const secret = process.env.PAYSTACK_SECRET_KEY!;
-    const res = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
+    // Create or update student
+    await Student.findOneAndUpdate(
       {
-        headers: { Authorization: `Bearer ${secret}` },
+        email: booking.email,
+      },
+      {
+        fullName: booking.name,
+        email: booking.email,
+        phone: booking.phone,
+        paymentStatus: "paid",
+        package: Number(booking.package),
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
       }
     );
 
-    const data = res.data.data;
-
-    // Check status
-    if (data.status !== "success") {
-      return NextResponse.json({ success: false, verified: false, data });
-    }
-
-    // ✅ Update only if not already marked paid
-    if (payment.status !== "paid") {
-      await Payment.findOneAndUpdate(
-        { reference },
-        {
-          status: "paid",
-          meta: data,
-        },
-        { new: true }
-      );
-    }
-
     return NextResponse.json({
       success: true,
-      verified: true,
       message: "Payment verified successfully",
-      data,
+      booking,
     });
-  } catch (err: any) {
-    console.error("❌ Verification error:", err.response?.data || err.message);
+
+  } catch (error: any) {
+    console.error(error);
+
     return NextResponse.json(
-      { success: false, error: "Verification failed" },
+      {
+        success: false,
+        error: error.message,
+      },
       { status: 500 }
     );
   }

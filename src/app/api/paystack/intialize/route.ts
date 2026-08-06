@@ -28,7 +28,7 @@ export async function POST(req: Request) {
       email,
       amount: amount * 100, // Paystack uses kobo
       reference: payment._id.toString(),
-      callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/success`,
+      callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/verify`,
     },
     {
       headers: {

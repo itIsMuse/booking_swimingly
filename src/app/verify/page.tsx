@@ -18,21 +18,25 @@ export default function VerifyPage() {
 
     const verifyPayment = async () => {
       try {
-        const res = await fetch(`/api/payments/verify?reference=${reference}`);
+        const res = await fetch(
+          `/api/bookings/verify?reference=${reference}`
+        );
+
         const data = await res.json();
 
         if (res.ok) {
-          setMessage("✅ Payment verified successfully! Booking confirmed.");
+          setMessage("✅ Payment verified successfully!");
+
           setTimeout(() => {
-            router.push("/booking"); // redirect to booking or dashboard
-          }, 3000);
+            router.push(`/welcome?id=${data.studentId}`);
+          }, 1500);
         } else {
-          setMessage("❌ Payment verification failed. Please contact support.");
+          setMessage("❌ Payment verification failed.");
           console.error(data);
         }
       } catch (err) {
         console.error(err);
-        setMessage("⚠️ Error verifying payment. Try again later.");
+        setMessage("⚠️ Something went wrong.");
       }
     };
 
@@ -40,11 +44,8 @@ export default function VerifyPage() {
   }, [searchParams, router]);
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen text-center">
+    <div className="flex h-screen items-center justify-center">
       <h1 className="text-2xl font-semibold">{message}</h1>
-      <p className="text-gray-500 mt-3">
-        You’ll be redirected shortly...
-      </p>
     </div>
   );
 }

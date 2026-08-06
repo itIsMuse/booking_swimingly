@@ -1,20 +1,23 @@
 import { NextResponse } from "next/server";
 import Booking from "@/lib/models/Booking";
-import {connectToDB} from "@/lib/db";
+import Student from "@/lib/models/Student";
+import { connectToDB } from "@/lib/db";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const reference = searchParams.get("reference");
 
   if (!reference) {
-    return NextResponse.json({ error: "Missing reference" }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: "Missing reference" },
+      { status: 400 }
+    );
   }
 
   try {
-    // Connect to MongoDB
     await connectToDB();
 
-    // Verify with Paystack
+    // Verify payment with Paystack
     const verifyRes = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
@@ -24,40 +27,79 @@ export async function GET(req: Request) {
       }
     );
 
-    const data = await verifyRes.json();
+    const result = await verifyRes.json();
 
-    if (data.data.status === "success") {
-      // Extract email or custom metadata to find booking
-      const customerEmail = data.data.customer.email;
-
-      // Update paymentStatus to 'paid' in your Booking model
-      const booking = await Booking.findOneAndUpdate(
-        { email: customerEmail, paymentStatus: "pending" },
-        { paymentStatus: "paid" },
-        { new: true }
-      );
-
-      if (!booking) {
-        return NextResponse.json(
-          { message: "Booking not found or already paid" },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({
-        message: "Payment verified successfully",
-        booking,
-      });
-    } else {
+    if (result.data.status !== "success") {
       return NextResponse.json(
-        { message: "Payment verification failed", data },
+        {
+          success: false,
+          message: "Payment verification failed",
+        },
         { status: 400 }
       );
     }
+
+    // Get customer's email from Paystack
+    const customerEmail = result.data.customer.email;
+
+    // Mark booking as paid
+    const booking = await Booking.findOneAndUpdate(
+      {
+        email: customerEmail,
+        paymentStatus: "pending",
+      },
+      {
+        paymentStatus: "paid",
+      },
+      {
+        new: true,
+      }
+    );
+
+    if (!booking) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Booking not found or already paid",
+        },
+        { status: 404 }
+      );
+    }
+
+    // Create or update student
+    const student = await Student.findOneAndUpdate(
+      {
+        email: booking.email,
+      },
+      {
+        fullName: booking.name,
+        email: booking.email,
+        phone: booking.phone,
+        paymentStatus: "paid",
+        package: Number(booking.package),
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: "Payment verified successfully",
+      studentId: student._id,
+      booking,
+    });
+
   } catch (error: any) {
     console.error(error);
+
     return NextResponse.json(
-      { error: "An error occurred", details: error.message },
+      {
+        success: false,
+        error: error.message,
+      },
       { status: 500 }
     );
   }
