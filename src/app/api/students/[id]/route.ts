@@ -1,19 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { connectToDB } from "@/lib/db";
 import Student from "@/lib/models/Student";
 
 export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ email: string }> }
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDB();
 
-    const { email } = await params;
+    const { id } = await params;
 
-    const student = await Student.findOne({
-      email: decodeURIComponent(email),
-    });
+    const student = await Student.findById(id);
 
     if (!student) {
       return NextResponse.json(
@@ -29,7 +27,6 @@ export async function GET(
       success: true,
       student,
     });
-
   } catch (error: any) {
     return NextResponse.json(
       {
