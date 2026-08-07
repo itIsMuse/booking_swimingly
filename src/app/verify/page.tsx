@@ -24,6 +24,8 @@ function VerifyContent() {
 
         const data = await res.json();
 
+        console.log("VERIFY RESPONSE:", data);
+
         if (res.ok && data.studentId) {
           setMessage("✅ Payment verified successfully!");
 
@@ -31,12 +33,15 @@ function VerifyContent() {
             router.push(`/welcome?id=${data.studentId}`);
           }, 1500);
         } else {
-          setMessage("❌ Payment verification failed.");
-          console.error(data);
+          setMessage(
+            `❌ Payment verification failed: ${
+              data.error || data.message || "Unknown error"
+            }`
+          );
         }
       } catch (err) {
-        console.error(err);
-        setMessage("⚠️ Something went wrong.");
+        console.error("VERIFY ERROR:", err);
+        setMessage("⚠️ Could not connect to payment verification.");
       }
     };
 
@@ -45,7 +50,7 @@ function VerifyContent() {
 
   return (
     <main className="min-h-screen bg-[#00102e] flex items-center justify-center px-6">
-      <div className="bg-white rounded-3xl p-10 text-center shadow-2xl">
+      <div className="bg-white rounded-3xl p-10 text-center shadow-2xl max-w-lg w-full">
         <h1 className="text-2xl font-semibold text-[#00102e]">
           {message}
         </h1>
