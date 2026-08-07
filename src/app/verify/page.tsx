@@ -19,7 +19,7 @@ function VerifyContent() {
     const verifyPayment = async () => {
       try {
         const res = await fetch(
-          `/api/bookings/verify?reference=${encodeURIComponent(reference)}`
+          `/api/payment/verify?reference=${encodeURIComponent(reference)}`
         );
 
         const data = await res.json();
