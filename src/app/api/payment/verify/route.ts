@@ -68,9 +68,9 @@ export async function GET(req: Request) {
       payment.phone ||
       "";
 
-    // 4. Mark payment as paid
-    payment.status = "paid";
-    payment.meta = result.data;
+    // 4. Mark payment as successful
+    payment.status = "SUCCESS";
+    payment.gatewayResponse = result.data;
     await payment.save();
 
     // 5. Create or update student
@@ -89,7 +89,7 @@ export async function GET(req: Request) {
       }
     );
 
-    // 6. Send student ID to the frontend
+    // 6. Return student ID to frontend
     return NextResponse.json({
       success: true,
       message: "Payment verified successfully",
