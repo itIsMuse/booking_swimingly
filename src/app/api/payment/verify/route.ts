@@ -1,23 +1,39 @@
 import { NextResponse } from "next/server";
-import Booking from "@/lib/models/Booking";
-import Student from "@/lib/models/Student";
 import { connectToDB } from "@/lib/db";
+import Payment from "@/lib/models/Payment";
+import Student from "@/lib/models/Student";
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const reference = searchParams.get("reference");
-
-  if (!reference) {
-    return NextResponse.json(
-      { success: false, error: "Missing reference" },
-      { status: 400 }
-    );
-  }
-
   try {
+    const { searchParams } = new URL(req.url);
+    const reference = searchParams.get("reference");
+
+    if (!reference) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Missing payment reference",
+        },
+        { status: 400 }
+      );
+    }
+
     await connectToDB();
 
-    // Verify payment with Paystack
+    // 1. Find the payment record
+    const payment = await Payment.findOne({ reference });
+
+    if (!payment) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Payment record not found",
+        },
+        { status: 404 }
+      );
+    }
+
+    // 2. Verify payment directly with Paystack
     const verifyRes = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
@@ -29,76 +45,63 @@ export async function GET(req: Request) {
 
     const result = await verifyRes.json();
 
-    if (result.data.status !== "success") {
+    if (!verifyRes.ok || result.data?.status !== "success") {
       return NextResponse.json(
         {
           success: false,
-          message: "Payment verification failed",
+          error: "Payment verification failed",
         },
         { status: 400 }
       );
     }
 
-    // Get customer's email from Paystack
+    // 3. Get customer information
     const customerEmail = result.data.customer.email;
 
-    // Mark booking as paid
-    const booking = await Booking.findOneAndUpdate(
-      {
-        email: customerEmail,
-        paymentStatus: "pending",
-      },
-      {
-        paymentStatus: "paid",
-      },
-      {
-        new: true,
-      }
-    );
+    const name =
+      result.data.metadata?.name ||
+      payment.name ||
+      "Swimingly Student";
 
-    if (!booking) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Booking not found or already paid",
-        },
-        { status: 404 }
-      );
-    }
+    const phone =
+      result.data.metadata?.phone ||
+      payment.phone ||
+      "";
 
-    // Create or update student
+    // 4. Mark payment as paid
+    payment.status = "PAID";
+    payment.meta = result.data;
+    await payment.save();
+
+    // 5. Create or update student
     const student = await Student.findOneAndUpdate(
+      { email: customerEmail },
       {
-        email: booking.email,
-      },
-      {
-        fullName: booking.name,
-        email: booking.email,
-        phone: booking.phone,
+        fullName: name,
+        email: customerEmail,
+        phone: phone,
         paymentStatus: "paid",
-        package: Number(booking.package),
       },
       {
-        upsert: true,
         new: true,
+        upsert: true,
         setDefaultsOnInsert: true,
       }
     );
 
+    // 6. Send student ID to the frontend
     return NextResponse.json({
       success: true,
       message: "Payment verified successfully",
-      studentId: student._id,
-      booking,
+      studentId: student._id.toString(),
     });
-
   } catch (error: any) {
-    console.error(error);
+    console.error("Payment verification error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: error.message || "Payment verification failed",
       },
       { status: 500 }
     );
