@@ -69,7 +69,7 @@ export async function GET(req: Request) {
       "";
 
     // 4. Mark payment as paid
-    payment.status = "PAID";
+    payment.status = "paid";
     payment.meta = result.data;
     await payment.save();
 
