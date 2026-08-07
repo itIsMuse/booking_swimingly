@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     // Update payment status to 'paid'
-    payment.status = "PAID";
+    payment.status = "paid";
     await payment.save();
 
     // Link to booking
